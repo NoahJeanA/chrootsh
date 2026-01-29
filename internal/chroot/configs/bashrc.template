@@ -5,6 +5,9 @@ export EDITOR=vi
 export PAGER=less
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# Kubernetes Configuration
+export KUBECONFIG=/etc/kubeconfig
+
 # Load network info if available
 if [ -f ~/.network_info ]; then
     . ~/.network_info
@@ -238,5 +241,6 @@ if [ -f ~/.network_info ]; then
     echo ""
     echo "  Tip: Use 'send <file> <username>' to share files"
     echo "       Use 'received' to see received files"
+    echo "       Use 'kubectl' (or 'k') to access the 'jail' namespace"
     echo ""
 fi

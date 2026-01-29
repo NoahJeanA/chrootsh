@@ -4,6 +4,41 @@ metadata:
   name: ssh-user-manager
 ---
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: jail
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jail-user
+  namespace: ssh-user-manager
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jail-full-access
+  namespace: jail
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jail-user-binding
+  namespace: jail
+subjects:
+- kind: ServiceAccount
+  name: jail-user
+  namespace: ssh-user-manager
+roleRef:
+  kind: Role
+  name: jail-full-access
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: ssh-keys-pvc
@@ -59,6 +94,7 @@ spec:
       labels:
         app: ssh-manager
     spec:
+      serviceAccountName: jail-user
       containers:
       - name: ssh-manager
         image: noahjeana/ssh-user-manager:latest
@@ -78,6 +114,9 @@ spec:
           mountPath: /var/lib/ssh-keys
         - name: ssh-db
           mountPath: /var/lib/ssh-users
+        - name: kube-api-access
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          readOnly: true
       volumes:
       - name: ssh-keys
         persistentVolumeClaim:
@@ -85,3 +124,19 @@ spec:
       - name: ssh-db
         persistentVolumeClaim:
           claimName: ssh-db-pvc
+      - name: kube-api-access
+        projected:
+          sources:
+          - serviceAccountToken:
+              path: token
+              expirationSeconds: 3607
+          - configMap:
+              name: kube-root-ca.crt
+              items:
+              - key: ca.crt
+                path: ca.crt
+          - downwardAPI:
+              items:
+              - path: namespace
+                fieldRef:
+                  fieldPath: metadata.namespace

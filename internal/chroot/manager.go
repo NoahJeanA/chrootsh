@@ -80,6 +80,7 @@ func (m *Manager) DeleteChroot(username string) error {
 	// Unmount /dev/pts
 	exec.Command("umount", user.ChrootDir+"/dev/pts").Run()
 	exec.Command("umount", user.ChrootDir+"/proc").Run()
+	exec.Command("umount", user.ChrootDir+"/var/run/secrets/kubernetes.io/serviceaccount").Run()
 
 	// Remove chroot directory
 	if err := os.RemoveAll(user.ChrootDir); err != nil {
@@ -112,6 +113,10 @@ func setupChroot(chrootDir string, uid int) error {
 		chrootDir + "/var",
 		chrootDir + "/var/cache",
 		chrootDir + "/var/cache/apk",
+		chrootDir + "/var/run",
+		chrootDir + "/var/run/secrets",
+		chrootDir + "/var/run/secrets/kubernetes.io",
+		chrootDir + "/var/run/secrets/kubernetes.io/serviceaccount",
 		chrootDir + "/sbin",
 		chrootDir + "/dev/pts",
 	}
@@ -357,6 +362,49 @@ root ALL=(ALL:ALL) ALL
 		os.MkdirAll(zshShareDir, 0755)
 		exec.Command("cp", "-r", "/usr/share/zsh/.", zshShareDir).Run()
 	}
+
+	// Mount ServiceAccount credentials for Kubernetes API access
+	serviceAccountDir := "/var/run/secrets/kubernetes.io/serviceaccount"
+	if _, err := os.Stat(serviceAccountDir); err == nil {
+		chrootSADir := chrootDir + serviceAccountDir
+		os.MkdirAll(chrootSADir, 0755)
+		
+		// Bind mount the serviceaccount directory into chroot
+		cmd := exec.Command("mount", "--bind", serviceAccountDir, chrootSADir)
+		if err := cmd.Run(); err != nil {
+			log.Warn().
+				Err(err).
+				Str("path", serviceAccountDir).
+				Msg("Failed to mount ServiceAccount credentials (not in K8s cluster?)")
+		} else {
+			log.Debug().
+				Str("source", serviceAccountDir).
+				Str("target", chrootSADir).
+				Msg("Mounted ServiceAccount credentials into chroot")
+		}
+	}
+
+	// Setup kubeconfig for kubectl
+	kubeconfigContent := `apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    server: https://kubernetes.default.svc
+  name: default-cluster
+contexts:
+- context:
+    cluster: default-cluster
+    namespace: jail
+    user: default-user
+  name: default-context
+current-context: default-context
+users:
+- name: default-user
+  user:
+    tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+`
+	os.WriteFile(chrootDir+"/etc/kubeconfig", []byte(kubeconfigContent), 0644)
 
 return nil
 }
