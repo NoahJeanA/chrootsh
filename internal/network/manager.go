@@ -78,6 +78,9 @@ func (m *Manager) SetupBridge() error {
 		{"iptables", "-t", "nat", "-A", "POSTROUTING", "-s", config.NetworkCIDR, "-o", primaryIface, "-j", "MASQUERADE"},
 		{"iptables", "-A", "FORWARD", "-i", config.BridgeName, "-o", primaryIface, "-j", "ACCEPT"},
 		{"iptables", "-A", "FORWARD", "-o", config.BridgeName, "-i", primaryIface, "-j", "ACCEPT"},
+		// Allow forwarding between ssh-bridge and all other interfaces (for K8s API access)
+		{"iptables", "-A", "FORWARD", "-i", config.BridgeName, "-j", "ACCEPT"},
+		{"iptables", "-A", "FORWARD", "-o", config.BridgeName, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"},
 	}
 
 	for _, cmdArgs := range natCmds {
