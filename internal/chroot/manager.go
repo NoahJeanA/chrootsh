@@ -393,13 +393,14 @@ root ALL=(ALL:ALL) ALL
 
 	// Setup kubeconfig for kubectl
 	// Use gateway IP with port 6443 (forwarded by network manager to K8s API)
+	// Skip TLS verification since we're connecting via local port forward
 	kubernetesHost := fmt.Sprintf("https://%s:6443", config.GatewayIP)
 	
 	kubeconfigContent := fmt.Sprintf(`apiVersion: v1
 kind: Config
 clusters:
 - cluster:
-    certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    insecure-skip-tls-verify: true
     server: %s
   name: default-cluster
 contexts:
