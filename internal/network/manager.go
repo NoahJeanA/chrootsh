@@ -2,6 +2,7 @@ package network
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -98,7 +99,45 @@ func (m *Manager) SetupBridge() error {
 		Str("gateway", config.GatewayIP).
 		Str("nat_interface", primaryIface).
 		Msg("Bridge network created successfully")
+	
+	// Setup port forwarding from bridge gateway to Kubernetes API
+	// This allows chroot users to access K8s API via their gateway
+	if err := m.setupK8sAPIForward(); err != nil {
+		log.Warn().Err(err).Msg("Failed to setup Kubernetes API forwarding (not in K8s cluster?)")
+	}
+	
 	m.bridgeSetup = true
+	return nil
+}
+
+func (m *Manager) setupK8sAPIForward() error {
+	// Check if we're in a K8s cluster
+	if err := exec.Command("test", "-f", "/var/run/secrets/kubernetes.io/serviceaccount/token").Run(); err != nil {
+		return fmt.Errorf("not in K8s cluster")
+	}
+	
+	kubeAPIHost := os.Getenv("KUBERNETES_SERVICE_HOST")
+	if kubeAPIHost == "" {
+		kubeAPIHost = "10.43.0.1" // Fallback
+	}
+	
+	// Use socat to forward traffic from bridge gateway to K8s API
+	// Run in background
+	go func() {
+		cmd := exec.Command("socat",
+			fmt.Sprintf("TCP-LISTEN:6443,bind=%s,fork,reuseaddr", config.GatewayIP),
+			fmt.Sprintf("TCP:%s:443", kubeAPIHost))
+		
+		log.Info().
+			Str("listen", config.GatewayIP+":6443").
+			Str("forward_to", kubeAPIHost+":443").
+			Msg("Starting Kubernetes API port forward")
+		
+		if err := cmd.Run(); err != nil {
+			log.Error().Err(err).Msg("K8s API port forward failed")
+		}
+	}()
+	
 	return nil
 }
 

@@ -392,12 +392,8 @@ root ALL=(ALL:ALL) ALL
 	}
 
 	// Setup kubeconfig for kubectl
-	// Use KUBERNETES_SERVICE_HOST from environment (set by K8s automatically)
-	kubernetesHost := "https://kubernetes.default.svc"
-	if envHost := os.Getenv("KUBERNETES_SERVICE_HOST"); envHost != "" {
-		kubernetesHost = "https://" + envHost
-		log.Debug().Str("host", kubernetesHost).Msg("Using Kubernetes API host from environment")
-	}
+	// Use gateway IP with port 6443 (forwarded by network manager to K8s API)
+	kubernetesHost := fmt.Sprintf("https://%s:6443", config.GatewayIP)
 	
 	kubeconfigContent := fmt.Sprintf(`apiVersion: v1
 kind: Config

@@ -11,7 +11,7 @@ RUN CGO_ENABLED=0 go build -o ssh-server .
 
 FROM alpine:latest
 
-RUN apk add --no-cache openssh openssh-keygen sudo bash shadow git curl kubectl fzf bash-completion ncurses ncurses-terminfo fastfetch iproute2 iputils busybox-extras iptables libcap arp-scan eza zsh zsh-vcs
+RUN apk add --no-cache openssh openssh-keygen sudo bash shadow git curl kubectl fzf bash-completion ncurses ncurses-terminfo fastfetch iproute2 iputils busybox-extras iptables libcap arp-scan eza zsh zsh-vcs socat
 
 # Sudoers Konfiguration für User-Wechsel
 RUN echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
