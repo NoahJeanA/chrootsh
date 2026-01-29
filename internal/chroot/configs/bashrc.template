@@ -1,0 +1,242 @@
+# Bash Configuration
+# Terminal setup
+# Terminal type is inherited from SSH client - do not override
+export EDITOR=vi
+export PAGER=less
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Load network info if available
+if [ -f ~/.network_info ]; then
+    . ~/.network_info
+fi
+
+# History
+export HISTFILE=/home/.bash_history
+export HISTSIZE=10000
+export HISTFILESIZE=20000
+export HISTCONTROL=ignoredups:erasedups
+shopt -s histappend
+
+# Shell options
+shopt -s checkwinsize
+shopt -s cdspell
+shopt -s dirspell 2>/dev/null
+shopt -s nocaseglob
+
+# Enable bash completion
+if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion 2>/dev/null || true
+fi
+
+# Load kubectl completion if available
+if command -v kubectl >/dev/null 2>&1; then
+    kubectl completion bash > /tmp/.kubectl_completion 2>/dev/null && source /tmp/.kubectl_completion 2>/dev/null
+    complete -o default -F __start_kubectl k 2>/dev/null || true
+fi
+
+# FZF Configuration
+export FZF_DEFAULT_OPTS="--height 40% --layout=reverse --border --inline-info --color=fg:#d0d0d0,bg:#1a1a1a,hl:#5f87af --color=fg+:#d0d0d0,bg+:#262626,hl+:#5fd7ff --color=info:#afaf87,prompt:#d7005f,pointer:#af5fff --color=marker:#87ff00,spinner:#af5fff,header:#87afaf"
+export FZF_CTRL_T_COMMAND='find . -type f 2>/dev/null'
+export FZF_ALT_C_COMMAND='find . -type d 2>/dev/null'
+
+# FZF Key bindings
+if command -v fzf >/dev/null 2>&1; then
+    bind '"\C-r": "\C-x1\e^\C-x2\e[0n"'
+    bind -x '"\C-x1": __fzf_history'
+    bind '"\C-x2": redraw-current-line'
+    
+    __fzf_history() {
+        local line
+        line=$(HISTTIMEFORMAT= history | fzf +s --tac --tiebreak=index | sed "s/ *[0-9]* *//")
+        READLINE_LINE="${line}"
+        READLINE_POINT=${#line}
+    }
+fi
+
+# Color Prompt with Git Status
+parse_git_branch() {
+    git branch 2>/dev/null | sed -e '/^[^*]/d' -e 's/* \(.*\)/(\1)/'
+}
+PS1='\[\033[01;32m\]\u@isolated\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\[\033[01;33m\]$(parse_git_branch)\[\033[00m\]\$ '
+
+# Enable colors
+export CLICOLOR=1
+export LS_COLORS='di=34:ln=35:so=32:pi=33:ex=31:bd=34;46:cd=34;43:su=30;41:sg=30;46:tw=30;42:ow=30;43'
+
+# Aliases
+alias ls='eza --color=auto --icons'
+alias ll='eza -la --color=auto --icons'
+alias l='eza -l --color=auto --icons'
+alias ll='/bin/ls -lah --color=auto 2>/dev/null || /bin/ls -lah'
+alias la='/bin/ls -A --color=auto 2>/dev/null || /bin/ls -A'
+alias l='/bin/ls -CF --color=auto 2>/dev/null || /bin/ls -CF'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias grep='grep --color=auto'
+alias df='df -h'
+alias du='du -h'
+alias free='free -h 2>/dev/null || echo "free not available"'
+alias h='history'
+alias c='clear'
+
+# APK alias
+alias apk='sudo -n apk'
+
+# Network helpers
+alias myip='echo $SSH_USER_IP'
+alias users='cat /tmp/active_users.txt 2>/dev/null || echo "No active users"'
+alias netinfo='echo "Your IP: $SSH_USER_IP"; echo "Gateway: $SSH_BRIDGE_GW"; echo "Network: 10.42.0.0/24"'
+
+# File sharing system
+mkdir -p ~/shared 2>/dev/null
+
+# Background receiver daemon
+if [ ! -f /tmp/.receiver_running ]; then
+    (
+        touch /tmp/.receiver_running
+        while true; do
+            DATA=$(nc -l -p 9999 -w 5 2>/dev/null)
+            if [ -n "$DATA" ]; then
+                SENDER=$(echo "$DATA" | head -1 | cut -d'|' -f1)
+                FILENAME=$(echo "$DATA" | head -1 | cut -d'|' -f2)
+                mkdir -p ~/shared/$SENDER
+                echo "$DATA" | tail -n +2 > ~/shared/$SENDER/$FILENAME
+                echo "[$(date +%H:%M:%S)] Received $FILENAME from $SENDER" >> ~/shared/.transfer.log
+            fi
+            sleep 0.5
+        done
+    ) &
+    disown
+fi
+
+# Send function
+send() {
+    if [ -z "$1" ] || [ -z "$2" ]; then
+        echo "Usage: send <file> <username>"
+        echo "Example: send test.txt alice"
+        return 1
+    fi
+    
+    local FILE="$1"
+    local TARGET_USER="$2"
+    
+    if [ ! -f "$FILE" ]; then
+        echo "Error: File '$FILE' not found"
+        return 1
+    fi
+    
+    local TARGET_IP=$(grep "^$TARGET_USER " /tmp/active_users.txt 2>/dev/null | awk '{print $2}')
+    
+    if [ -z "$TARGET_IP" ]; then
+        echo "Error: User '$TARGET_USER' not found"
+        echo "Active users:"
+        cat /tmp/active_users.txt 2>/dev/null
+        return 1
+    fi
+    
+    local FILENAME=$(basename "$FILE")
+    local MY_USER=$(whoami)
+    
+    echo "Sending $FILENAME to $TARGET_USER ($TARGET_IP)..."
+    
+    {
+        echo "$MY_USER|$FILENAME|"
+        cat "$FILE"
+    } | nc -w 2 "$TARGET_IP" 9999
+    
+    if [ $? -eq 0 ]; then
+        echo "File sent successfully"
+    else
+        echo "Send failed"
+        return 1
+    fi
+}
+
+# List received files
+received() {
+    echo "=== Received Files ==="
+    if [ -d ~/shared ]; then
+        for sender in ~/shared/*/; do
+            if [ -d "$sender" ]; then
+                sender_name=$(basename "$sender")
+                echo ""
+                echo "From $sender_name:"
+                ls -lh "$sender" 2>/dev/null | tail -n +2
+            fi
+        done
+    else
+        echo "No files received yet"
+    fi
+    
+    if [ -f ~/shared/.transfer.log ]; then
+        echo ""
+        echo "=== Transfer Log ==="
+        tail -10 ~/shared/.transfer.log
+    fi
+}
+
+# Kubernetes aliases
+alias k='kubectl'
+alias kgp='kubectl get pods'
+alias kgpo='kubectl get pods -o wide'
+alias kgs='kubectl get svc'
+alias kgn='kubectl get nodes'
+alias kgd='kubectl get deploy'
+alias kns='kubectl config set-context --current --namespace'
+alias kd='kubectl describe'
+alias kl='kubectl logs'
+alias klf='kubectl logs -f'
+alias kaf='kubectl apply -f'
+alias kdel='kubectl delete'
+alias kx='kubectl exec -it'
+alias kpf='kubectl port-forward'
+
+# Git aliases
+alias gs='git status'
+alias gss='git status -s'
+alias ga='git add'
+alias gaa='git add --all'
+alias gc='git commit -v'
+alias gcm='git commit -m'
+alias gp='git push'
+alias gpl='git pull'
+alias gl='git log --oneline --graph --all'
+alias glo='git log --oneline'
+alias gd='git diff'
+alias gds='git diff --staged'
+alias gb='git branch'
+alias gba='git branch -a'
+alias gco='git checkout'
+alias gcb='git checkout -b'
+
+# Utils
+alias ll='ls -lah'
+alias la='ls -A'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias c='clear'
+alias h='history'
+alias mkcd='mkdir -p $1 && cd $1'
+
+# Welcome message
+if [ -f ~/.network_info ]; then
+    clear
+    fastfetch --logo Linux_small --logo-color-1 cyan --logo-color-2 blue 2>/dev/null || true
+    echo ""
+    echo ""
+    echo "  Network:"
+    echo "     Your IP: $SSH_USER_IP"
+    echo "     Gateway: $SSH_BRIDGE_GW"
+    echo ""
+    echo "  Active Users:"
+    if [ -f /tmp/active_users.txt ]; then
+        awk '{printf "     %s @ %s\n", $1, $2}' /tmp/active_users.txt
+    else
+        echo "     None"
+    fi
+    echo ""
+    echo "  Tip: Use 'send <file> <username>' to share files"
+    echo "       Use 'received' to see received files"
+    echo ""
+fi

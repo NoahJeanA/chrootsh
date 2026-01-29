@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  ssh-manager:
+    build: .
+    image: ssh-user-manager:latest
+    container_name: ssh-user-manager
+    ports:
+      - "2222:2222"
+    environment:
+      - LOG_LEVEL=info
+      - ENV=production
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    volumes:
+      - ssh-keys:/var/lib/ssh-keys
+      - ssh-db:/var/lib/ssh-users
+    restart: unless-stopped
+    
+volumes:
+  ssh-keys:
+    name: ssh-user-manager-keys
+  ssh-db:
+    name: ssh-user-manager-db

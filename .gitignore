@@ -1,0 +1,47 @@
+# Binaries
+ssh-server
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go build artifacts
+*.test
+*.out
+/vendor/
+
+# Private keys (CRITICAL)
+*_key
+*_key.pem
+!*_key.pub
+*.pem
+!*.pub
+
+# Backup files
+*.bak
+*.backup
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Database files
+*.db
+/var/
+
+# Temporary files
+/tmp/
+*.tmp
+*.log
+
+# Environment files
+.env
+.env.local
