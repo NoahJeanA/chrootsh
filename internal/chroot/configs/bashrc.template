@@ -26,18 +26,20 @@ shopt -s cdspell
 shopt -s dirspell 2>/dev/null
 shopt -s nocaseglob
 
-# Enable bash completion
-if [ -f /usr/share/bash-completion/bash_completion ]; then
-    . /usr/share/bash-completion/bash_completion 2>/dev/null || true
-fi
+# Enable bash completion - Load with error suppression
+[ -f /usr/share/bash-completion/bash_completion ] && . /usr/share/bash-completion/bash_completion 2>/dev/null
+
+# Basic completions for common commands (fallback if bash-completion doesn't work)
+complete -d cd mkdir rmdir pushd popd 2>/dev/null
+complete -c which man 2>/dev/null
+complete -f cat less more head tail grep 2>/dev/null
 
 # Load kubectl completion if available
 if command -v kubectl >/dev/null 2>&1; then
-    # Only load if bash-completion is available
-    if declare -F _init_completion >/dev/null 2>&1; then
-        source <(kubectl completion bash 2>/dev/null) || true
-        complete -o default -F __start_kubectl k 2>/dev/null || true
-    fi
+    source <(kubectl completion bash 2>/dev/null) 2>/dev/null && complete -o default -F __start_kubectl k 2>/dev/null || {
+        # Fallback: basic file completion for kubectl
+        complete -f kubectl k 2>/dev/null
+    }
 fi
 
 # FZF Configuration
