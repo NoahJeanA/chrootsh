@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ssh-user-manager
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ssh-keys-pvc
+  namespace: ssh-user-manager
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ssh-db-pvc
+  namespace: ssh-user-manager
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ssh-user-manager
+  namespace: ssh-user-manager
+  annotations:
+    expose.neverup.at/subdomain: "ssh"     # Optional - für HTTP-Routing
+    expose.neverup.at/ports: "2222/tcp"    # WICHTIG: Port für Firewall/Exposer
+spec:
+  type: ClusterIP
+  ports:
+  - port: 2222
+    targetPort: 2222
+    protocol: TCP
+  selector:
+    app: ssh-manager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ssh-user-manager
+  namespace: ssh-user-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ssh-manager
+  template:
+    metadata:
+      labels:
+        app: ssh-manager
+    spec:
+      containers:
+      - name: ssh-manager
+        image: noahjeana/ssh-user-manager:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 2222
+          protocol: TCP
+        env:
+        - name: LOG_LEVEL
+          value: "info"
+        - name: ENV
+          value: "production"
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: ssh-keys
+          mountPath: /var/lib/ssh-keys
+        - name: ssh-db
+          mountPath: /var/lib/ssh-users
+      volumes:
+      - name: ssh-keys
+        persistentVolumeClaim:
+          claimName: ssh-keys-pvc
+      - name: ssh-db
+        persistentVolumeClaim:
+          claimName: ssh-db-pvc
