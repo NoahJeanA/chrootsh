@@ -264,7 +264,24 @@ func setupChroot(chrootDir string, uid int) error {
 	if _, err := os.Stat("/usr/share/bash-completion"); err == nil {
 		completionDir := chrootDir + "/usr/share/bash-completion"
 		os.MkdirAll(completionDir, 0755)
-		exec.Command("cp", "-r", "/usr/share/bash-completion/.", completionDir).Run()
+		
+		// Copy main bash_completion file
+		exec.Command("cp", "/usr/share/bash-completion/bash_completion", completionDir+"/bash_completion").Run()
+		
+		// Copy completions directory
+		os.MkdirAll(completionDir+"/completions", 0755)
+		cmd := exec.Command("cp", "-r", "/usr/share/bash-completion/completions/.", completionDir+"/completions/")
+		if err := cmd.Run(); err != nil {
+			log.Warn().Err(err).Msg("Failed to copy bash completions")
+		} else {
+			log.Debug().Msg("Copied bash completions to chroot")
+		}
+		
+		// Copy helpers if they exist
+		if _, err := os.Stat("/usr/share/bash-completion/helpers"); err == nil {
+			os.MkdirAll(completionDir+"/helpers", 0755)
+			exec.Command("cp", "-r", "/usr/share/bash-completion/helpers/.", completionDir+"/helpers/").Run()
+		}
 	}
 
 	// Setup APK
