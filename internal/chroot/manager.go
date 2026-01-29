@@ -326,14 +326,21 @@ func setupChroot(chrootDir string, uid int) error {
 	os.WriteFile(chrootDir+"/etc/passwd", []byte(passwdContent), 0644)
 	os.WriteFile(chrootDir+"/etc/group", []byte(groupContent), 0644)
 
-	// Setup DNS
-	resolvConf := `nameserver 8.8.8.8
+	// Setup DNS - copy from host or use defaults
+	hostResolvConf := "/etc/resolv.conf"
+	if resolvData, err := os.ReadFile(hostResolvConf); err == nil {
+		// Use host's DNS configuration (includes cluster DNS)
+		os.WriteFile(chrootDir+"/etc/resolv.conf", resolvData, 0644)
+	} else {
+		// Fallback to public DNS
+		resolvConf := `nameserver 8.8.8.8
 nameserver 8.8.4.4
 nameserver 1.1.1.1
 nameserver 1.0.0.1
 options ndots:0
 `
-	os.WriteFile(chrootDir+"/etc/resolv.conf", []byte(resolvConf), 0644)
+		os.WriteFile(chrootDir+"/etc/resolv.conf", []byte(resolvConf), 0644)
+	}
 
 	// Copy CA certificates
 	if _, err := os.Stat("/etc/ssl"); err == nil {
@@ -385,12 +392,19 @@ root ALL=(ALL:ALL) ALL
 	}
 
 	// Setup kubeconfig for kubectl
-	kubeconfigContent := `apiVersion: v1
+	// Use KUBERNETES_SERVICE_HOST from environment (set by K8s automatically)
+	kubernetesHost := "https://kubernetes.default.svc"
+	if envHost := os.Getenv("KUBERNETES_SERVICE_HOST"); envHost != "" {
+		kubernetesHost = "https://" + envHost
+		log.Debug().Str("host", kubernetesHost).Msg("Using Kubernetes API host from environment")
+	}
+	
+	kubeconfigContent := fmt.Sprintf(`apiVersion: v1
 kind: Config
 clusters:
 - cluster:
     certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
-    server: https://kubernetes.default.svc
+    server: %s
   name: default-cluster
 contexts:
 - context:
@@ -403,7 +417,7 @@ users:
 - name: default-user
   user:
     tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
-`
+`, kubernetesHost)
 	os.WriteFile(chrootDir+"/etc/kubeconfig", []byte(kubeconfigContent), 0644)
 
 return nil
